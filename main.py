@@ -10,7 +10,7 @@ from google.oauth2.service_account import Credentials
 # --- CONFIGURAZIONI INIZIALI ---
 FMP_API_KEY = os.getenv("FMP_API_KEY") 
 GCP_CREDENTIALS_JSON = os.getenv("GCP_CREDENTIALS")
-SHEET_NAME = "NomeDelTuoFileGoogleSheet" # Sostituisci con il nome esatto del tuo file
+SHEET_NAME = "NASDAQ 100 Quant Dashboard" # Sostituisci con il nome esatto del tuo file
 TAB_NAME = "Dashboard"
 CURRENT_YEAR = datetime.date.today().year
 

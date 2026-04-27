@@ -111,37 +111,49 @@ def get_yield_curve():
     return ["Errore", "Dati Tassi non disponibili", "N/A"]
 
 def get_zbt():
-    """Calcola Zweig Breadth Thrust tramite API FMP."""
-    print("Calcolando ZBT...")
-    if not FMP_API_KEY:
-        return ["Errore", "API Key mancante", "Controlla i Secret"]
-
-    url = f"https://financialmodelingprep.com/api/v4/historical-market-breadth?limit=30&apikey={FMP_API_KEY}"
+    """Calcola uno ZBT Sintetico esatto sui 100 titoli del NASDAQ 100 tramite Yahoo Finance"""
+    print("Calcolando ZBT Sintetico (NASDAQ 100)...")
+    
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        dati = response.json()
+        # 1. Recuperiamo la lista aggiornata dei 100 ticker del NASDAQ da Wikipedia
+        url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
+        tables = pd.read_html(url)
+        tickers = tables[4]['Ticker'].tolist()
         
-        df = pd.DataFrame(dati)
-        df = df.sort_values(by='date').reset_index(drop=True)
+        # Sostituiamo eventuali ticker che Yahoo legge diversamente (es. GOOGL)
+        tickers = [t.replace('.', '-') for t in tickers]
         
-        df['A_D_Ratio'] = df['advancing'] / (df['advancing'] + df['declining'])
-        df['ZBT_EMA'] = df['A_D_Ratio'].ewm(span=10, adjust=False).mean()
+        # 2. Scarichiamo le ultime 25 sedute per tutti e 100 i titoli (ci mette circa 5 secondi)
+        data = yf.download(tickers, period="25d", progress=False)['Close']
         
-        ultimo_valore = df['ZBT_EMA'].iloc[-1]
-        valore_precedente_10gg = df['ZBT_EMA'].iloc[-10]
+        # 3. Calcoliamo la variazione percentuale giornaliera
+        returns = data.pct_change()
         
+        # 4. Contiamo quante azioni salgono (Advance) e quante scendono (Decline) ogni giorno
+        advancing = (returns > 0).sum(axis=1)
+        declining = (returns < 0).sum(axis=1)
+        
+        # 5. Calcoliamo il rapporto e la Media Mobile Esponenziale a 10 giorni
+        ad_ratio = advancing / (advancing + declining)
+        zbt_ema = ad_ratio.ewm(span=10, adjust=False).mean()
+        
+        # Recuperiamo gli ultimi valori validi (rimuovendo eventuali NaN dei primi giorni)
+        zbt_ema = zbt_ema.dropna()
+        ultimo_valore = zbt_ema.iloc[-1]
+        valore_precedente_10gg = zbt_ema.iloc[-10]
+        
+        # 6. Logica del Segnale ZBT
         status = "⚫ Nessun Segnale"
         signal = "Neutro"
         if valore_precedente_10gg < 0.40 and ultimo_valore > 0.615:
             status = "🟢 INNESCATO"
             signal = "Forte Rialzo Long-Term"
-        
-        detail = f"ZBT EMA Attuale: {ultimo_valore:.3f}"
+            
+        detail = f"ZBT Nasdaq-100 Attuale: {ultimo_valore:.3f}"
         return [status, signal, detail]
+        
     except Exception as e:
-        return ["Errore", "Impossibile scaricare Breadth", str(e)[:20]]
-
+        return ["Errore", "Calcolo sintetico fallito", str(e)[:20]]
 def update_google_sheets(dashboard_data):
     """Inietta la matrice dati nel blocco B3:D9 di Google Sheets."""
     print("Connessione a Google Sheets in corso...")

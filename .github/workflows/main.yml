@@ -1,0 +1,27 @@
+name: Update Quant Dashboard
+on:
+  schedule:
+    # Esegue lo script alle 23:00 UTC dal Lunedì al Venerdì
+    - cron: '0 23 * * 1-5'
+  workflow_dispatch: # Permette di lanciarlo manualmente con un bottone
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Esegui lo script Python
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        run: python main.py

@@ -1,4 +1,4 @@
-yfinance==0.2.37
+yfinance
 pandas==2.2.1
 requests==2.31.0
 gspread==6.0.2

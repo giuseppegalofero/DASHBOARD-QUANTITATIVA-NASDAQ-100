@@ -1,9 +1,13 @@
 name: Update Quant Dashboard
 on:
   schedule:
-    # Esegue lo script alle 23:00 UTC (dopo la chiusura di Wall Street) dal Lun al Ven
     - cron: '0 23 * * 1-5'
-  workflow_dispatch: # Questo abilita il pulsante per l'avvio manuale
+  workflow_dispatch:
+
+# --- AGGIUNTO QUESTO BLOCCO PER SILENZIARE IL WARNING ---
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# --------------------------------------------------------
 
 jobs:
   run-bot:

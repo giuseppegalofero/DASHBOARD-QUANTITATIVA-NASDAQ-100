@@ -1,5 +1,5 @@
 yfinance
-pandas==2.2.1
-requests==2.31.0
-gspread==6.0.2
-google-auth==2.29.0
+requests
+pandas>=2.2.0
+gspread>=6.0.0
+google-auth>=2.29.0

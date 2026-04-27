@@ -17,12 +17,19 @@ CURRENT_YEAR = datetime.date.today().year
 def get_nasdaq_stats():
     """Scarica i dati storici YTD del NASDAQ (tramite ETF QQQ) e calcola le statistiche."""
     print("Scaricando dati NASDAQ (QQQ)...")
-    qqq = yf.Ticker("QQQ")
+    
+    # 1. Creiamo una sessione mascherata da Browser per eludere il blocco di Yahoo
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    })
+    
+    # 2. Passiamo la sessione mascherata a yfinance
+    qqq = yf.Ticker("QQQ", session=session)
     df = qqq.history(start=f"{CURRENT_YEAR}-01-01")
     
     if df.empty:
-        raise ValueError("Impossibile scaricare i dati da Yahoo Finance.")
-
+        raise ValueError("Impossibile scaricare i dati da Yahoo Finance. Blocco persistente.")
     # Variabili Base
     total_days = len(df)
     first_close = df['Close'].iloc[0]

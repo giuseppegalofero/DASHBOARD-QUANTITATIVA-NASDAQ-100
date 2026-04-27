@@ -7,30 +7,24 @@ import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
 
-# --- CONFIGURAZIONI INIZIALI ---
+# --- 1. CONFIGURAZIONI ---
 FMP_API_KEY = os.getenv("FMP_API_KEY") 
 GCP_CREDENTIALS_JSON = os.getenv("GCP_CREDENTIALS")
-SHEET_NAME = "NASDAQ 100 Quant Dashboard" # Sostituisci con il nome esatto del tuo file
+SHEET_NAME = "NASDAQ 100 Quant Dashboard"
 TAB_NAME = "Dashboard"
 CURRENT_YEAR = datetime.date.today().year
 
 def get_nasdaq_stats():
-    """Scarica i dati storici YTD del NASDAQ (tramite ETF QQQ) e calcola le statistiche."""
+    """Analisi Quantitativa su YTD e Stagionalità tramite ETF QQQ."""
     print("Scaricando dati NASDAQ (QQQ)...")
     
-    # 1. Creiamo una sessione mascherata da Browser per eludere il blocco di Yahoo
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    })
-    
-    # 2. Passiamo la sessione mascherata a yfinance
-    qqq = yf.Ticker("QQQ", session=session)
+    # Usiamo yfinance in modo pulito, senza sessioni custom. L'anti-bot è integrato.
+    qqq = yf.Ticker("QQQ")
     df = qqq.history(start=f"{CURRENT_YEAR}-01-01")
     
     if df.empty:
-        raise ValueError("Impossibile scaricare i dati da Yahoo Finance. Blocco persistente.")
-    # Variabili Base
+        return [["Errore", "Dati QQQ non disponibili", "N/A"]] * 5
+
     total_days = len(df)
     first_close = df['Close'].iloc[0]
     last_close = df['Close'].iloc[-1]
@@ -66,7 +60,7 @@ def get_nasdaq_stats():
         d100_signal = "Forte YTD" if ytd_return > 0 else "Debole YTD"
         d100_detail = f"YTD Attuale: {ytd_return:.2f}%"
 
-    # 4. Sell in May
+    # 4. Sell in May (Finestra Stagionale)
     current_month = datetime.date.today().month
     if 5 <= current_month <= 10:
         sim_status = "🔴 Attivo (Maggio-Ottobre)"
@@ -74,12 +68,22 @@ def get_nasdaq_stats():
     else:
         sim_status = "🟢 Inattivo (Novembre-Aprile)"
         sim_signal = "Stagionalità Favorevole"
-    sim_detail = "Finestra attiva da Mag a Ott"
+    sim_detail = "Finestra debole attiva da Mag a Ott"
 
-    # 5. Ciclo Presidenziale (2026 = Anno 2, Midterm)
-    pres_cycle_status = "🟡 Anno 2 (Midterm)"
-    pres_cycle_signal = "Volatilità estiva attesa"
-    pres_cycle_detail = "Minimi tipici nel Q3"
+    # 5. Ciclo Elettorale Presidenziale
+    cycle_year = (CURRENT_YEAR - 2024) % 4
+    if cycle_year == 2:
+        pres_cycle_status = "🟡 Anno 2 (Midterm)"
+        pres_cycle_signal = "Volatilità estiva attesa"
+        pres_cycle_detail = "Minimi tipici nel Q3"
+    elif cycle_year == 3:
+        pres_cycle_status = "🟢 Anno 3 (Pre-Election)"
+        pres_cycle_signal = "Fortemente Rialzista"
+        pres_cycle_detail = "L'anno migliore del ciclo"
+    else:
+        pres_cycle_status = f"⚪ Anno {cycle_year or 4}"
+        pres_cycle_signal = "Neutro"
+        pres_cycle_detail = "Nessun estremo statistico"
 
     return [
         [jan_status, jan_signal, jan_detail],
@@ -90,18 +94,10 @@ def get_nasdaq_stats():
     ]
 
 def get_yield_curve():
-    """Calcola l'inversione della curva dei rendimenti (10 Anni vs 3 Mesi)."""
-    print("Calcolo Curva Rendimenti...")
-    
-    # Aggiungi anche qui la sessione mascherata
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    })
-    
-    # Passala ai Ticker
-    tnx = yf.Ticker("^TNX", session=session).history(period="5d")
-    irx = yf.Ticker("^IRX", session=session).history(period="5d")
+    """Verifica Inversione Curva dei Rendimenti (10Y vs 3M)."""
+    print("Calcolando Curva dei Rendimenti...")
+    tnx = yf.Ticker("^TNX").history(period="5d")
+    irx = yf.Ticker("^IRX").history(period="5d")
     
     if not tnx.empty and not irx.empty:
         yield_10y = tnx['Close'].iloc[-1]
@@ -112,44 +108,45 @@ def get_yield_curve():
         signal = "Rischio Recessione" if spread < 0 else "Espansione"
         detail = f"Spread 10Y-3M: {spread:.2f}%"
         return [status, signal, detail]
-    return ["Errore", "Dati non disponibili", "N/A"]
+    return ["Errore", "Dati Tassi non disponibili", "N/A"]
 
 def get_zbt():
-    """Calcola lo Zweig Breadth Thrust usando l'API di FMP."""
-    print("Calcolo ZBT da FMP...")
+    """Calcola Zweig Breadth Thrust tramite API FMP."""
+    print("Calcolando ZBT...")
     if not FMP_API_KEY:
-        return ["Errore", "API Key mancante", "Verifica GitHub Secrets"]
+        return ["Errore", "API Key mancante", "Controlla i Secret"]
 
     url = f"https://financialmodelingprep.com/api/v4/historical-market-breadth?limit=30&apikey={FMP_API_KEY}"
-    response = requests.get(url)
-    
-    if response.status_code != 200:
-        return ["Errore API", response.status_code, "N/A"]
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        dati = response.json()
         
-    dati = response.json()
-    df = pd.DataFrame(dati)
-    df = df.sort_values(by='date').reset_index(drop=True)
-    
-    df['A_D_Ratio'] = df['advancing'] / (df['advancing'] + df['declining'])
-    df['ZBT_EMA'] = df['A_D_Ratio'].ewm(span=10, adjust=False).mean()
-    
-    ultimo_valore = df['ZBT_EMA'].iloc[-1]
-    valore_precedente_10gg = df['ZBT_EMA'].iloc[-10]
-    
-    status = "⚫ Nessun Segnale"
-    signal = "Neutro"
-    if valore_precedente_10gg < 0.40 and ultimo_valore > 0.615:
-        status = "🟢 INNESCATO"
-        signal = "Forte Rialzo Long-Term"
-    
-    detail = f"ZBT EMA Attuale: {ultimo_valore:.3f}"
-    return [status, signal, detail]
+        df = pd.DataFrame(dati)
+        df = df.sort_values(by='date').reset_index(drop=True)
+        
+        df['A_D_Ratio'] = df['advancing'] / (df['advancing'] + df['declining'])
+        df['ZBT_EMA'] = df['A_D_Ratio'].ewm(span=10, adjust=False).mean()
+        
+        ultimo_valore = df['ZBT_EMA'].iloc[-1]
+        valore_precedente_10gg = df['ZBT_EMA'].iloc[-10]
+        
+        status = "⚫ Nessun Segnale"
+        signal = "Neutro"
+        if valore_precedente_10gg < 0.40 and ultimo_valore > 0.615:
+            status = "🟢 INNESCATO"
+            signal = "Forte Rialzo Long-Term"
+        
+        detail = f"ZBT EMA Attuale: {ultimo_valore:.3f}"
+        return [status, signal, detail]
+    except Exception as e:
+        return ["Errore", "Impossibile scaricare Breadth", str(e)[:20]]
 
 def update_google_sheets(dashboard_data):
-    """Si connette a Google Sheets e inietta la matrice di dati."""
-    print("Autenticazione su Google Sheets...")
+    """Inietta la matrice dati nel blocco B3:D9 di Google Sheets."""
+    print("Connessione a Google Sheets in corso...")
     if not GCP_CREDENTIALS_JSON:
-        raise ValueError("Credenziali GCP mancanti nei Secret.")
+        raise ValueError("Credenziali GCP mancanti nei Secret di GitHub.")
 
     creds_dict = json.loads(GCP_CREDENTIALS_JSON)
     scopes = [
@@ -160,26 +157,18 @@ def update_google_sheets(dashboard_data):
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(credentials)
     
-    # Apri il foglio
     sheet = gc.open(SHEET_NAME).worksheet(TAB_NAME)
-    
-    # Aggiorna il blocco B3:D9 in una singola chiamata API per evitare limiti
-    # La sintassi range_name è aggiornata per gspread 6.0.0+
     sheet.update(values=dashboard_data, range_name='B3:D9')
-    print("Dashboard aggiornata con successo!")
+    print("✅ Dashboard aggiornata con successo!")
 
 if __name__ == "__main__":
     try:
-        # Raccogli tutti i dati
         nasdaq_data = get_nasdaq_stats()
         yield_data = get_yield_curve()
         zbt_data = get_zbt()
         
-        # Assembla la matrice (Lista di liste corrispondenti a B3:D9)
         final_data = nasdaq_data + [yield_data] + [zbt_data]
-        
-        # Invia a Google Sheets
         update_google_sheets(final_data)
         
     except Exception as e:
-        print(f"Errore critico durante l'esecuzione: {e}")
+        print(f"❌ Errore critico durante l'esecuzione: {e}")

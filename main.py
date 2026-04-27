@@ -92,9 +92,16 @@ def get_nasdaq_stats():
 def get_yield_curve():
     """Calcola l'inversione della curva dei rendimenti (10 Anni vs 3 Mesi)."""
     print("Calcolo Curva Rendimenti...")
-    # Usiamo il 10y (^TNX) e il 3m (^IRX) perché il 2y a volte manca su YF
-    tnx = yf.Ticker("^TNX").history(period="5d")
-    irx = yf.Ticker("^IRX").history(period="5d")
+    
+    # Aggiungi anche qui la sessione mascherata
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    })
+    
+    # Passala ai Ticker
+    tnx = yf.Ticker("^TNX", session=session).history(period="5d")
+    irx = yf.Ticker("^IRX", session=session).history(period="5d")
     
     if not tnx.empty and not irx.empty:
         yield_10y = tnx['Close'].iloc[-1]

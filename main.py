@@ -115,21 +115,28 @@ def get_zbt():
     print("Calcolando ZBT Sintetico (NASDAQ 100)...")
     
     try:
-        # 1. Recuperiamo la lista aggiornata dei 100 ticker del NASDAQ da Wikipedia
+        # 1. Recuperiamo la lista mascherando il bot da Browser (Fix per l'Errore 403)
         url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
-        tables = pd.read_html(url)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, come Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        
+        # Facciamo la richiesta con il travestimento
+        risposta_wiki = requests.get(url, headers=headers)
+        risposta_wiki.raise_for_status() # Controlla che non ci siano stati blocchi
+        
+        # Diamo a pandas il testo HTML già "sbloccato"
+        tables = pd.read_html(risposta_wiki.text)
         tickers = tables[4]['Ticker'].tolist()
         
         # Sostituiamo eventuali ticker che Yahoo legge diversamente (es. GOOGL)
         tickers = [t.replace('.', '-') for t in tickers]
         
-        # 2. Scarichiamo le ultime 25 sedute per tutti e 100 i titoli (ci mette circa 5 secondi)
+        # 2. Scarichiamo le ultime 25 sedute per tutti e 100 i titoli
         data = yf.download(tickers, period="25d", progress=False)['Close']
         
         # 3. Calcoliamo la variazione percentuale giornaliera
         returns = data.pct_change()
         
-        # 4. Contiamo quante azioni salgono (Advance) e quante scendono (Decline) ogni giorno
+        # 4. Contiamo quante azioni salgono (Advance) e quante scendono (Decline)
         advancing = (returns > 0).sum(axis=1)
         declining = (returns < 0).sum(axis=1)
         
@@ -137,7 +144,7 @@ def get_zbt():
         ad_ratio = advancing / (advancing + declining)
         zbt_ema = ad_ratio.ewm(span=10, adjust=False).mean()
         
-        # Recuperiamo gli ultimi valori validi (rimuovendo eventuali NaN dei primi giorni)
+        # Recuperiamo gli ultimi valori validi (rimuovendo i giorni vuoti iniziali)
         zbt_ema = zbt_ema.dropna()
         ultimo_valore = zbt_ema.iloc[-1]
         valore_precedente_10gg = zbt_ema.iloc[-10]
@@ -149,11 +156,12 @@ def get_zbt():
             status = "🟢 INNESCATO"
             signal = "Forte Rialzo Long-Term"
             
-        detail = f"ZBT Nasdaq-100 Attuale: {ultimo_valore:.3f}"
+        detail = f"ZBT Nasdaq-100: {ultimo_valore:.3f}"
         return [status, signal, detail]
         
     except Exception as e:
         return ["Errore", "Calcolo sintetico fallito", str(e)[:20]]
+        
 def update_google_sheets(dashboard_data):
     """Inietta la matrice dati nel blocco B3:D9 di Google Sheets."""
     print("Connessione a Google Sheets in corso...")

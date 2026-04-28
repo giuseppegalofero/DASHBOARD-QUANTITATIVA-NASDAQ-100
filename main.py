@@ -113,43 +113,41 @@ def get_yield_curve():
 def get_zbt():
     """Calcola uno ZBT Sintetico esatto sui 100 titoli del NASDAQ 100 tramite Yahoo Finance"""
     print("Calcolando ZBT Sintetico (NASDAQ 100)...")
+    import io # <-- IL FIX È QUI: Importiamo la libreria per gestire i testi come file
     
     try:
-        # 1. Recuperiamo la lista mascherando il bot da Browser (Fix per l'Errore 403)
         url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, come Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         
-        # Facciamo la richiesta con il travestimento
         risposta_wiki = requests.get(url, headers=headers)
-        risposta_wiki.raise_for_status() # Controlla che non ci siano stati blocchi
+        risposta_wiki.raise_for_status() 
         
-        # Diamo a pandas il testo HTML già "sbloccato"
-        tables = pd.read_html(risposta_wiki.text)
+        # IL SECONDO FIX È QUI: Wrappiamo il testo in io.StringIO()
+        tables = pd.read_html(io.StringIO(risposta_wiki.text))
         tickers = tables[4]['Ticker'].tolist()
         
-        # Sostituiamo eventuali ticker che Yahoo legge diversamente (es. GOOGL)
+        # Sostituiamo eventuali ticker che Yahoo legge diversamente
         tickers = [t.replace('.', '-') for t in tickers]
         
-        # 2. Scarichiamo le ultime 25 sedute per tutti e 100 i titoli
+        # Scarichiamo le ultime 25 sedute
         data = yf.download(tickers, period="25d", progress=False)['Close']
         
-        # 3. Calcoliamo la variazione percentuale giornaliera
+        # Calcoliamo le variazioni
         returns = data.pct_change()
         
-        # 4. Contiamo quante azioni salgono (Advance) e quante scendono (Decline)
+        # Contiamo azioni in rialzo e ribasso
         advancing = (returns > 0).sum(axis=1)
         declining = (returns < 0).sum(axis=1)
         
-        # 5. Calcoliamo il rapporto e la Media Mobile Esponenziale a 10 giorni
+        # Calcoliamo lo ZBT
         ad_ratio = advancing / (advancing + declining)
         zbt_ema = ad_ratio.ewm(span=10, adjust=False).mean()
         
-        # Recuperiamo gli ultimi valori validi (rimuovendo i giorni vuoti iniziali)
+        # Rimuoviamo i valori nulli e prendiamo gli ultimi giorni
         zbt_ema = zbt_ema.dropna()
         ultimo_valore = zbt_ema.iloc[-1]
         valore_precedente_10gg = zbt_ema.iloc[-10]
         
-        # 6. Logica del Segnale ZBT
         status = "⚫ Nessun Segnale"
         signal = "Neutro"
         if valore_precedente_10gg < 0.40 and ultimo_valore > 0.615:

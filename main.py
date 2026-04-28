@@ -113,7 +113,7 @@ def get_yield_curve():
 def get_zbt():
     """Calcola uno ZBT Sintetico esatto sui 100 titoli del NASDAQ 100 tramite Yahoo Finance"""
     print("Calcolando ZBT Sintetico (NASDAQ 100)...")
-    import io # <-- IL FIX È QUI: Importiamo la libreria per gestire i testi come file
+    import io 
     
     try:
         url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
@@ -122,14 +122,27 @@ def get_zbt():
         risposta_wiki = requests.get(url, headers=headers)
         risposta_wiki.raise_for_status() 
         
-        # IL SECONDO FIX È QUI: Wrappiamo il testo in io.StringIO()
         tables = pd.read_html(io.StringIO(risposta_wiki.text))
-        tickers = tables[4]['Ticker'].tolist()
         
-        # Sostituiamo eventuali ticker che Yahoo legge diversamente
+        # --- FIX INTELLIGENTE: Ricerca dinamica della colonna ---
+        tickers = []
+        for df in tables:
+            # Cerchiamo la colonna, che si chiami 'Ticker' o 'Symbol'
+            if 'Ticker' in df.columns:
+                tickers = df['Ticker'].tolist()
+                break
+            elif 'Symbol' in df.columns:
+                tickers = df['Symbol'].tolist()
+                break
+                
+        if not tickers:
+            raise ValueError("Colonna Ticker/Symbol sparita da Wikipedia!")
+        # --------------------------------------------------------
+        
+        # Sostituiamo eventuali ticker che Yahoo legge diversamente (es. GOOGL)
         tickers = [t.replace('.', '-') for t in tickers]
         
-        # Scarichiamo le ultime 25 sedute
+        # Scarichiamo le ultime 25 sedute per tutti i titoli
         data = yf.download(tickers, period="25d", progress=False)['Close']
         
         # Calcoliamo le variazioni
@@ -148,6 +161,7 @@ def get_zbt():
         ultimo_valore = zbt_ema.iloc[-1]
         valore_precedente_10gg = zbt_ema.iloc[-10]
         
+        # Logica del Segnale ZBT
         status = "⚫ Nessun Segnale"
         signal = "Neutro"
         if valore_precedente_10gg < 0.40 and ultimo_valore > 0.615:
